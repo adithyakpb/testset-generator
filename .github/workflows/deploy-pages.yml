@@ -44,7 +44,8 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Accept either a secret or a variable (account ID is not sensitive)
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy frontend/dist --project-name=testsets-generator
           # If the project doesn't exist yet, the first deploy creates it.
           # Optionally pin a branch alias: command: pages deploy frontend/dist --project-name=testsets-generator --branch=main
