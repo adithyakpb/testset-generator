@@ -1,0 +1,82 @@
+# testset-generator — local/self-host compose (design doc 02.1, 02.4)
+#
+# Services:
+#   api     — FastAPI + Postgres; background jobs run in the same container
+#             (worker merged into api: a simple `jobs` table queue polled by a
+#             background task loop — no Celery/Redis for v1, per design 02.2).
+#   web     — React SPA (nginx serving the built bundle; frontend/Dockerfile).
+#   postgres— Postgres with pgvector (state + embeddings).
+#
+# The api image is built from backend/Dockerfile, the web image from
+# frontend/Dockerfile (both are built by their respective agents).
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      # --- design 02.4 env wiring ---
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/testset_gen
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}        # openai | anthropic | ollama
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}        # set when LLM_PROVIDER=ollama
+      DATA_DIR: /data
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080}
+    volumes:
+      - data:/data                                  # uploads, corpora, exports
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    # Migrations run on api startup (Alembic), per design 02.4.
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked into the SPA at build time. Leave empty for demo mode
+        # (mock data when the API is unreachable — used on the Pages demo).
+        VITE_API_URL: ${VITE_API_URL:-}
+    environment:
+      API_PROXY_TARGET: http://api:8000             # reverse-proxy target if the web image proxies /api
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: testset_gen
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d testset_gen"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # Optional fully-offline LLM profile (design 02.4): `docker compose --profile local up`
+  ollama:
+    profiles: ["local"]
+    image: ollama/ollama:latest
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  data:
+  ollama:

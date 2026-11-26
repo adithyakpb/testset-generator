@@ -1,0 +1,87 @@
+# Builds the backend Docker image, pushes it to GHCR, and (optionally)
+# deploys it to a self-hosted server over SSH.
+#
+# Required repo secrets (only for the optional ssh deploy step):
+#   DEPLOY_HOST   — server hostname/IP
+#   DEPLOY_USER   — ssh user
+#   DEPLOY_SSH_KEY— private key (OpenSSH PEM) for the deploy user
+#
+# The image push uses the built-in GITHUB_TOKEN — no extra secret needed.
+# Make sure the repo (or org) settings allow Actions read/write packages,
+# or set `permissions: packages: write` (done below).
+
+name: Deploy backend (GHCR + self-host)
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: server-deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/api
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Tag release (v*)
+        if: github.ref_type == 'tag'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE }}:${{ github.ref_name }}
+          cache-from: type=gha
+
+  # ---- OPTIONAL: self-host deploy placeholder -------------------------------
+  # Self-hosting runs `docker compose` on your server (postgres + api + web).
+  # 1. Copy docker-compose.yml and .env (with real SECRET_KEY, LLM keys,
+  #    POSTGRES_PASSWORD) to the server, e.g. /opt/testset-generator.
+  # 2. In .env set nothing image-related — instead edit compose on the server
+  #    to use `image: ghcr.io/<owner>/<repo>/api:latest` instead of `build:`.
+  # 3. Uncomment this job and fill the secrets listed at the top.
+  #
+  # deploy:
+  #   needs: build-push
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/main'
+  #   steps:
+  #     - name: Deploy over ssh
+  #       uses: appleboy/ssh-action@v1
+  #       with:
+  #         host: ${{ secrets.DEPLOY_HOST }}
+  #         username: ${{ secrets.DEPLOY_USER }}
+  #         key: ${{ secrets.DEPLOY_SSH_KEY }}
+  #         script: |
+  #           cd /opt/testset-generator
+  #           docker compose pull api
+  #           docker compose up -d
+  #           docker image prune -f
