@@ -14,6 +14,25 @@ from .core import analyze, anonymize, generate, transforms
 log = logging.getLogger("jobs")
 
 
+def run_analysis(db: Session, pid: str) -> None:
+    """Recompute lexicon, register profile, and intent clusters for a project."""
+    seeds = db.scalars(select(SeedRecord).where(SeedRecord.project_id == pid)).all()
+    texts = [s.anon_text or s.text for s in seeds]
+    for t in db.scalars(select(LexiconTerm).where(LexiconTerm.project_id == pid)).all():
+        db.delete(t)
+    for lt in analyze.extract_lexicon(texts):
+        db.add(LexiconTerm(id=new_id("lex"), project_id=pid, **lt))
+    profile = analyze.register_profile(texts)
+    rp = db.get(RegisterProfile, pid) or RegisterProfile(project_id=pid)
+    rp.stats = profile
+    db.merge(rp)
+    for c in db.scalars(select(IntentCluster).where(IntentCluster.project_id == pid)).all():
+        db.delete(c)
+    for c in analyze.cluster_intents(texts, [s.id for s in seeds]):
+        db.add(IntentCluster(id=new_id("int"), project_id=pid, **c))
+    db.commit()
+
+
 def run_job(db: Session, job: Job) -> None:
     job.status = "running"
     db.commit()
@@ -37,25 +56,10 @@ def run_job(db: Session, job: Job) -> None:
         db.add(SurrogateMap(id=new_id("sur"), project_id=pid, mapping=surrogates.mapping))
 
     elif job.type == "analyze":
-        seeds = db.scalars(select(SeedRecord).where(SeedRecord.project_id == pid)).all()
-        texts = [s.anon_text or s.text for s in seeds]
         job.progress_total = 3
-        for t in db.scalars(select(LexiconTerm).where(LexiconTerm.project_id == pid)).all():
-            db.delete(t)
-        for lt in analyze.extract_lexicon(texts):
-            db.add(LexiconTerm(id=new_id("lex"), project_id=pid, **lt))
         job.progress_done = 1
         db.commit()
-        profile = analyze.register_profile(texts)
-        rp = db.get(RegisterProfile, pid) or RegisterProfile(project_id=pid)
-        rp.stats = profile
-        db.merge(rp)
-        job.progress_done = 2
-        db.commit()
-        for c in db.scalars(select(IntentCluster).where(IntentCluster.project_id == pid)).all():
-            db.delete(c)
-        for c in analyze.cluster_intents(texts, [s.id for s in seeds]):
-            db.add(IntentCluster(id=new_id("int"), project_id=pid, **c))
+        run_analysis(db, pid)
         job.progress_done = 3
 
     elif job.type == "generate":

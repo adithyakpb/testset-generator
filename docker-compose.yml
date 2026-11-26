@@ -19,16 +19,16 @@ services:
       # --- design 02.4 env wiring ---
       DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/testset_gen
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
-      LLM_PROVIDER: ${LLM_PROVIDER:-openai}        # openai | anthropic | ollama
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}          # mock | openai | anthropic | ollama
       LLM_MODEL: ${LLM_MODEL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}        # set when LLM_PROVIDER=ollama
       DATA_DIR: /data
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8096}
     volumes:
       - data:/data                                  # uploads, corpora, exports
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "${API_PORT:-8095}:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,7 +46,7 @@ services:
     environment:
       API_PROXY_TARGET: http://api:8000             # reverse-proxy target if the web image proxies /api
     ports:
-      - "${WEB_PORT:-8080}:8080"
+      - "${WEB_PORT:-8096}:80"
     depends_on:
       - api
     restart: unless-stopped

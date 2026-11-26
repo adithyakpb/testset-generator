@@ -909,6 +909,7 @@ export async function initApi(): Promise<{ demo: boolean }> {
     const res = await fetch(`${BASE}/v1/projects`, { signal: controller.signal });
     clearTimeout(timer);
     if (res.ok) {
+      await res.json(); // must be real JSON — some hosts return the SPA HTML with 200
       api = httpClient;
       demoMode.value = false;
       return { demo: false };

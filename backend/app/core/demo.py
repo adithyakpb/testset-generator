@@ -80,4 +80,7 @@ def seed_demo(db) -> str:
     db.add(ResponseSpec(id=new_id("spec"), project_id=pid, name="E-commerce support spec",
                         version=1, doc=DEMO_SPEC, is_active=True))
     db.commit()
+    # pre-compute analysis so a fresh install can generate immediately
+    from ..jobs import run_analysis
+    run_analysis(db, pid)
     return pid
