@@ -131,7 +131,7 @@ export default function Spec() {
       </div>
 
       {lintRes.errors.length > 0 && (
-        <div className="card" style={{ borderColor: "rgba(241,106,106,0.5)" }}>
+        <div className="card" style={{ borderColor: "var(--bad-border)" }}>
           {lintRes.errors.map((e) => (
             <div key={e} className="err-hint">✕ {e}</div>
           ))}
