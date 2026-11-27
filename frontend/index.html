@@ -6,7 +6,12 @@
     <title>Testset Generator</title>
     <script>
       // Prevent theme flash: apply dark class before paint (default is light).
+      // ?theme=dark|light wins over localStorage so embedding sites can sync.
       (function () {
+        var param = new URLSearchParams(window.location.search).get("theme");
+        if (param === "dark" || param === "light") {
+          localStorage.setItem("theme", param);
+        }
         if (localStorage.getItem("theme") === "dark") {
           document.documentElement.classList.add("dark");
         }
